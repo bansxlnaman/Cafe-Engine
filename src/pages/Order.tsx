@@ -1,17 +1,20 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, MapPin } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, CheckCircle, MapPin, MessageCircle } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useCart } from '@/context/CartContext';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { generateCustomerConfirmationLink, type OrderDetails } from '@/lib/whatsapp';
 
-const tableNumbers = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+const tableNumbers = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'];
 
 const Order = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { 
     items, 
     totalAmount, 
@@ -23,6 +26,18 @@ const Order = () => {
   } = useCart();
   const [isPlacing, setIsPlacing] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
+  const [orderId, setOrderId] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [whatsappLink, setWhatsappLink] = useState<string>('');
+
+  // Auto-fill table number from QR code scan
+  useEffect(() => {
+    const tableFromQR = searchParams.get('table');
+    if (tableFromQR && tableNumbers.includes(tableFromQR)) {
+      setTableNumber(tableFromQR);
+      toast.success(`Table ${tableFromQR} selected from QR code!`);
+    }
+  }, [searchParams, setTableNumber]);
 
   const handlePlaceOrder = async () => {
     if (!tableNumber) {
@@ -35,17 +50,58 @@ const Order = () => {
     }
 
     setIsPlacing(true);
-    
-    // Simulate order placement
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setOrderPlaced(true);
-    toast.success('Order placed successfully!');
-    
-    setTimeout(() => {
-      clearCart();
-      navigate('/');
-    }, 3000);
+
+    try {
+      // Insert order into database
+      const { data, error } = await supabase
+        .from('orders')
+        .insert({
+          table_number: tableNumber,
+          items: items.map(item => ({
+            id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          special_instructions: specialInstructions || null,
+          total_amount: totalAmount,
+          customer_phone: customerPhone || null,
+          status: 'new',
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setOrderId(data.id);
+      setOrderPlaced(true);
+      toast.success('Order placed successfully!');
+
+      // Generate WhatsApp link if phone provided
+      if (customerPhone) {
+        const orderDetails: OrderDetails = {
+          orderId: data.id,
+          tableNumber,
+          items: items.map(item => ({
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          totalAmount,
+          specialInstructions: specialInstructions || undefined,
+        };
+        setWhatsappLink(generateCustomerConfirmationLink(customerPhone, orderDetails));
+      }
+
+      setTimeout(() => {
+        clearCart();
+      }, 5000);
+    } catch (error) {
+      console.error('Error placing order:', error);
+      toast.error('Failed to place order. Please try again.');
+    } finally {
+      setIsPlacing(false);
+    }
   };
 
   if (orderPlaced) {
@@ -64,12 +120,37 @@ const Order = () => {
               <p className="text-muted-foreground mb-2">
                 Your order has been sent to the kitchen.
               </p>
-              <p className="text-lg font-semibold text-primary mb-6">
+              <p className="text-lg font-semibold text-primary mb-4">
                 Table #{tableNumber}
               </p>
-              <p className="text-sm text-muted-foreground">
-                Redirecting you to home...
+              <p className="text-xs text-muted-foreground mb-6">
+                Order ID: {orderId.slice(0, 8)}
               </p>
+              
+              {whatsappLink && (
+                <a 
+                  href={whatsappLink} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-full font-medium transition-colors mb-6"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  Get Confirmation on WhatsApp
+                </a>
+              )}
+              
+              <div className="flex flex-col gap-3 mt-6">
+                <Link to="/menu">
+                  <Button variant="outline" className="w-full">
+                    Order More Items
+                  </Button>
+                </Link>
+                <Link to="/">
+                  <Button variant="ghost" className="w-full">
+                    Back to Home
+                  </Button>
+                </Link>
+              </div>
             </div>
           </div>
         </main>
@@ -176,6 +257,24 @@ const Order = () => {
                 className="resize-none"
                 rows={3}
               />
+            </div>
+
+            {/* WhatsApp Notification */}
+            <div className="bg-card rounded-xl p-6 shadow-card mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <MessageCircle className="w-5 h-5 text-green-600" />
+                <h2 className="font-semibold text-lg text-foreground">WhatsApp Updates (Optional)</h2>
+              </div>
+              <Input
+                type="tel"
+                placeholder="Your phone number (e.g., 9876543210)"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                className="mb-2"
+              />
+              <p className="text-xs text-muted-foreground">
+                Get order confirmation and ready notification on WhatsApp
+              </p>
             </div>
 
             {/* Payment Info */}
