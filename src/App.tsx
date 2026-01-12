@@ -9,6 +9,8 @@ import Menu from "./pages/Menu";
 import Cart from "./pages/Cart";
 import Order from "./pages/Order";
 import About from "./pages/About";
+import Kitchen from "./pages/Kitchen";
+import QRCodes from "./pages/QRCodes";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +28,8 @@ const App = () => (
             <Route path="/cart" element={<Cart />} />
             <Route path="/order" element={<Order />} />
             <Route path="/about" element={<About />} />
+            <Route path="/kitchen" element={<Kitchen />} />
+            <Route path="/qr-codes" element={<QRCodes />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

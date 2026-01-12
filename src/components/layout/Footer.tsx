@@ -5,7 +5,7 @@ const Footer = () => {
   return (
     <footer className="bg-primary text-primary-foreground">
       <div className="container mx-auto px-4 py-12">
-        <div className="grid md:grid-cols-4 gap-8">
+        <div className="grid md:grid-cols-5 gap-8">
           {/* Brand */}
           <div className="md:col-span-2">
             <Link to="/" className="flex items-center gap-2 mb-4">
@@ -58,6 +58,23 @@ const Footer = () => {
               <li>
                 <Link to="/about" className="hover:text-primary-foreground transition-colors">
                   About Us
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Staff Links */}
+          <div>
+            <h4 className="font-semibold mb-4">Staff</h4>
+            <ul className="space-y-2 text-primary-foreground/80">
+              <li>
+                <Link to="/kitchen" className="hover:text-primary-foreground transition-colors">
+                  Kitchen Display
+                </Link>
+              </li>
+              <li>
+                <Link to="/qr-codes" className="hover:text-primary-foreground transition-colors">
+                  Table QR Codes
                 </Link>
               </li>
             </ul>
