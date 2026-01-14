@@ -1,6 +1,6 @@
 import { Plus, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { MenuItem } from '@/lib/menuData';
+import { MenuItem } from '@/hooks/useMenuItems';
 import { useCart } from '@/context/CartContext';
 
 interface MenuCardProps {

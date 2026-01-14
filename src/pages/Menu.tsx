@@ -3,12 +3,15 @@ import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import FloatingCart from '@/components/cart/FloatingCart';
 import MenuCard from '@/components/menu/MenuCard';
-import { categories, getItemsByCategory } from '@/lib/menuData';
+import { useMenuItems, categories, getItemsByCategory } from '@/hooks/useMenuItems';
 import { cn } from '@/lib/utils';
+import { Coffee } from 'lucide-react';
 
 const Menu = () => {
   const [activeCategory, setActiveCategory] = useState(categories[0].id);
-  const items = getItemsByCategory(activeCategory);
+  const { data: menuItems, isLoading, error } = useMenuItems();
+
+  const items = menuItems ? getItemsByCategory(menuItems, activeCategory) : [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -50,29 +53,52 @@ const Menu = () => {
           </div>
         </div>
 
-        {/* Menu Items */}
-        <div className="container mx-auto px-4 py-8">
-          <div className="mb-6">
-            <h2 className="text-2xl font-serif font-bold text-foreground">
-              {categories.find(c => c.id === activeCategory)?.name}
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              {categories.find(c => c.id === activeCategory)?.description}
-            </p>
+        {/* Loading State */}
+        {isLoading && (
+          <div className="container mx-auto px-4 py-12 text-center">
+            <Coffee className="w-12 h-12 mx-auto text-primary animate-pulse mb-4" />
+            <p className="text-muted-foreground">Loading menu...</p>
           </div>
+        )}
 
-          <div className="grid gap-3 max-w-2xl">
-            {items.map((item, index) => (
-              <div
-                key={item.id}
-                className="animate-fade-up"
-                style={{ animationDelay: `${index * 0.05}s` }}
-              >
-                <MenuCard item={item} />
-              </div>
-            ))}
+        {/* Error State */}
+        {error && (
+          <div className="container mx-auto px-4 py-12 text-center">
+            <p className="text-destructive">Failed to load menu. Please try again.</p>
           </div>
-        </div>
+        )}
+
+        {/* Menu Items */}
+        {!isLoading && !error && (
+          <div className="container mx-auto px-4 py-8">
+            <div className="mb-6">
+              <h2 className="text-2xl font-serif font-bold text-foreground">
+                {categories.find(c => c.id === activeCategory)?.name}
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                {categories.find(c => c.id === activeCategory)?.description}
+              </p>
+            </div>
+
+            {items.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No items available in this category.</p>
+              </div>
+            ) : (
+              <div className="grid gap-3 max-w-2xl">
+                {items.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="animate-fade-up"
+                    style={{ animationDelay: `${index * 0.05}s` }}
+                  >
+                    <MenuCard item={item} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       <Footer />

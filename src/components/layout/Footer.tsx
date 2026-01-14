@@ -1,11 +1,15 @@
 import { Link } from 'react-router-dom';
 import { Coffee, MapPin, Phone, Clock, Instagram, Facebook } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 const Footer = () => {
+  const { isAdmin, isStaff } = useAuth();
+  const showStaffLinks = isAdmin || isStaff;
+
   return (
     <footer className="bg-primary text-primary-foreground">
       <div className="container mx-auto px-4 py-12">
-        <div className="grid md:grid-cols-5 gap-8">
+        <div className={`grid gap-8 ${showStaffLinks ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
           {/* Brand */}
           <div className="md:col-span-2">
             <Link to="/" className="flex items-center gap-2 mb-4">
@@ -56,6 +60,11 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
+                <Link to="/track-order" className="hover:text-primary-foreground transition-colors">
+                  Track Order
+                </Link>
+              </li>
+              <li>
                 <Link to="/about" className="hover:text-primary-foreground transition-colors">
                   About Us
                 </Link>
@@ -63,32 +72,29 @@ const Footer = () => {
             </ul>
           </div>
 
-          {/* Staff Links */}
-          <div>
-            <h4 className="font-semibold mb-4">Staff</h4>
-            <ul className="space-y-2 text-primary-foreground/80">
-              <li>
-                <Link to="/auth" className="hover:text-primary-foreground transition-colors">
-                  Staff Login
-                </Link>
-              </li>
-              <li>
-                <Link to="/admin" className="hover:text-primary-foreground transition-colors">
-                  Admin Panel
-                </Link>
-              </li>
-              <li>
-                <Link to="/kitchen" className="hover:text-primary-foreground transition-colors">
-                  Kitchen Display
-                </Link>
-              </li>
-              <li>
-                <Link to="/qr-codes" className="hover:text-primary-foreground transition-colors">
-                  Table QR Codes
-                </Link>
-              </li>
-            </ul>
-          </div>
+          {/* Staff Links - Only show when authenticated as staff/admin */}
+          {showStaffLinks && (
+            <div>
+              <h4 className="font-semibold mb-4">Staff</h4>
+              <ul className="space-y-2 text-primary-foreground/80">
+                <li>
+                  <Link to="/admin" className="hover:text-primary-foreground transition-colors">
+                    Admin Panel
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/kitchen" className="hover:text-primary-foreground transition-colors">
+                    Kitchen Display
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/qr-codes" className="hover:text-primary-foreground transition-colors">
+                    Table QR Codes
+                  </Link>
+                </li>
+              </ul>
+            </div>
+          )}
 
           {/* Contact */}
           <div>
