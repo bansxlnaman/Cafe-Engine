@@ -9,7 +9,7 @@ const tableNumbers = Array.from({ length: 20 }, (_, i) => (i + 1).toString());
 
 const QRCodes = () => {
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
-  const baseUrl = window.location.origin;
+  const baseUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
 
   const toggleTable = (tableNum: string) => {
     setSelectedTables(prev => 
