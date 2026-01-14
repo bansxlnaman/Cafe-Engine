@@ -4,18 +4,17 @@ import {
   LayoutDashboard, 
   UtensilsCrossed, 
   BarChart3, 
-  Settings, 
   LogOut,
   Plus,
   Edit2,
   Trash2,
   Save,
-  X,
   TrendingUp,
   ShoppingBag,
   DollarSign,
   Users,
-  Coffee
+  Coffee,
+  ClipboardList
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +39,8 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import OrdersManagement from '@/components/admin/OrdersManagement';
+import StaffManagement from '@/components/admin/StaffManagement';
 
 interface MenuItem {
   id: string;
@@ -281,6 +282,17 @@ const Admin = () => {
             Dashboard
           </button>
           <button
+            onClick={() => setActiveTab('orders')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              activeTab === 'orders' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'hover:bg-muted'
+            }`}
+          >
+            <ClipboardList className="w-5 h-5" />
+            Orders
+          </button>
+          <button
             onClick={() => setActiveTab('menu')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               activeTab === 'menu' 
@@ -290,6 +302,17 @@ const Admin = () => {
           >
             <UtensilsCrossed className="w-5 h-5" />
             Menu Items
+          </button>
+          <button
+            onClick={() => setActiveTab('staff')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              activeTab === 'staff' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'hover:bg-muted'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            Staff
           </button>
           <button
             onClick={() => setActiveTab('analytics')}
@@ -376,7 +399,7 @@ const Admin = () => {
                     Open Kitchen Display
                   </Button>
                   <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/qr-codes')}>
-                    <Settings className="w-4 h-4" />
+                    <ClipboardList className="w-4 h-4" />
                     Manage QR Codes
                   </Button>
                   <Button variant="outline" className="w-full justify-start gap-2" onClick={() => setActiveTab('menu')}>
@@ -470,6 +493,10 @@ const Admin = () => {
             })}
           </div>
         )}
+
+        {activeTab === 'orders' && <OrdersManagement />}
+
+        {activeTab === 'staff' && <StaffManagement />}
 
         {activeTab === 'analytics' && (
           <div className="space-y-6">
