@@ -3,13 +3,15 @@ import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import FloatingCart from '@/components/cart/FloatingCart';
 import MenuCard from '@/components/menu/MenuCard';
-import { useMenuItems, categories, getItemsByCategory } from '@/hooks/useMenuItems';
+import { useMenuItems, getItemsByCategory } from '@/hooks/useMenuItems';
+import { useCategories } from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
 import { Coffee } from 'lucide-react';
 
 const Menu = () => {
-  const [activeCategory, setActiveCategory] = useState(categories[0].id);
+  const { data: categories = [] } = useCategories();
   const { data: menuItems, isLoading, error } = useMenuItems();
+  const [activeCategory, setActiveCategory] = useState(categories[0]?.id || '');
 
   const items = menuItems ? getItemsByCategory(menuItems, activeCategory) : [];
 

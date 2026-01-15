@@ -48,7 +48,7 @@ const TrackOrder = () => {
               Track Your Order
             </h1>
             <p className="text-muted-foreground">
-              Enter your order ID to see real-time status updates
+              Enter your order number to see real-time status updates
             </p>
           </div>
 
@@ -57,7 +57,7 @@ const TrackOrder = () => {
             <div className="flex gap-2">
               <Input
                 type="text"
-                placeholder="Enter Order ID"
+                placeholder="Enter Order Number (e.g., 1, 2, 3...)"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="flex-1"
@@ -93,8 +93,10 @@ const TrackOrder = () => {
               <Card className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <p className="text-sm text-muted-foreground">Order ID</p>
-                    <p className="font-mono font-medium">{order.id.slice(0, 8).toUpperCase()}</p>
+                    <p className="text-sm text-muted-foreground">Order Number</p>
+                    <p className="font-mono font-medium text-2xl">
+                      {order.order_number ? `#${order.order_number}` : order.id.slice(0, 8).toUpperCase()}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-muted-foreground">Table</p>
@@ -199,7 +201,7 @@ const TrackOrder = () => {
               <Package className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
               <p className="text-lg font-medium text-foreground mb-2">No Order Selected</p>
               <p className="text-muted-foreground">
-                Enter your order ID above to track your order status in real-time.
+                Enter your order number above to track your order status in real-time.
               </p>
             </Card>
           )}

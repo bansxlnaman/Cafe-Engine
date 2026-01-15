@@ -14,7 +14,9 @@ import {
   DollarSign,
   Users,
   Coffee,
-  ClipboardList
+  ClipboardList,
+  Tags,
+  Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +40,10 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useCafe } from '@/context/CafeContext';
+import { useCategories, useCategoryMutations } from '@/hooks/useCategories';
+import { useMenuItems } from '@/hooks/useMenuItems';
+import { useTables, useTableMutations } from '@/hooks/useTables';
 import { toast } from 'sonner';
 import OrdersManagement from '@/components/admin/OrdersManagement';
 import StaffManagement from '@/components/admin/StaffManagement';
@@ -47,8 +53,10 @@ interface MenuItem {
   name: string;
   description: string | null;
   price: number;
-  category: string;
+  category_id: string;
+  category_name: string;
   image_url: string | null;
+  image_file?: File;
   is_veg: boolean;
   is_popular: boolean;
   is_available: boolean;
@@ -60,17 +68,23 @@ interface DailySales {
   total_revenue: number;
 }
 
-const categories = ['Starters', 'Burgers', 'Pizza & Pasta', 'Chinese', 'Beverages', 'Desserts'];
-
 const Admin = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin, signOut } = useAuth();
+  const { cafe } = useCafe();
+  const { data: categories = [] } = useCategories();
+  const { data: menuItems = [] } = useMenuItems();
+  const { data: tables = [] } = useTables();
+  const { createCategory, updateCategory, deleteCategory } = useCategoryMutations();
+  const { createTable, deleteTable, createBulkTables } = useTableMutations();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [dailySales, setDailySales] = useState<DailySales[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<any>(null);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [todayStats, setTodayStats] = useState({
     orders: 0,
     revenue: 0,
@@ -85,33 +99,21 @@ const Admin = () => {
 
   useEffect(() => {
     if (user) {
-      fetchMenuItems();
       fetchDailySales();
       fetchTodayStats();
     }
   }, [user]);
 
-  const fetchMenuItems = async () => {
-    const { data, error } = await supabase
-      .from('menu_items')
-      .select('*')
-      .order('category', { ascending: true });
-
-    if (error) {
-      console.error('Error fetching menu:', error);
-    } else {
-      setMenuItems(data || []);
-    }
-    setLoading(false);
-  };
-
   const fetchDailySales = async () => {
+    if (!cafe?.id) return;
+    
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const { data, error } = await supabase
       .from('orders')
       .select('created_at, total_amount')
+      .eq('cafe_id', cafe.id)
       .gte('created_at', sevenDaysAgo.toISOString())
       .in('status', ['ready', 'served']);
 
@@ -140,13 +142,45 @@ const Admin = () => {
     setDailySales(salesArray);
   };
 
+  const handleImageUpload = async (file: File): Promise<string | null> => {
+    if (!cafe?.id) return null;
+
+    setUploadingImage(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `menu-images/${cafe.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('menu-images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('menu-images')
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error: any) {
+      console.error('Error uploading image:', error);
+      toast.error('Failed to upload image');
+      return null;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const fetchTodayStats = async () => {
+    if (!cafe?.id) return;
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const { data, error } = await supabase
       .from('orders')
       .select('total_amount')
+      .eq('cafe_id', cafe.id)
       .gte('created_at', today.toISOString());
 
     if (!error && data) {
@@ -160,19 +194,31 @@ const Admin = () => {
   };
 
   const handleSaveItem = async () => {
-    if (!editingItem) return;
+    if (!editingItem || !cafe?.id) return;
 
     const isNew = !editingItem.id;
     
     try {
+      let imageUrl = editingItem.image_url;
+
+      // Handle image upload if a file is selected
+      if (editingItem.image_file) {
+        imageUrl = await handleImageUpload(editingItem.image_file);
+        if (!imageUrl) return; // Upload failed
+      }
+
       if (isNew) {
+        const categoryName = categories.find(c => c.id === editingItem.category_id)?.name || '';
         const { error } = await supabase
           .from('menu_items')
           .insert({
             name: editingItem.name,
             description: editingItem.description,
             price: editingItem.price,
-            category: editingItem.category,
+            category: categoryName,
+            category_id: editingItem.category_id,
+            cafe_id: cafe.id,
+            image_url: imageUrl,
             is_veg: editingItem.is_veg,
             is_popular: editingItem.is_popular,
             is_available: editingItem.is_available,
@@ -180,13 +226,16 @@ const Admin = () => {
         if (error) throw error;
         toast.success('Menu item added!');
       } else {
+        const categoryName = categories.find(c => c.id === editingItem.category_id)?.name || '';
         const { error } = await supabase
           .from('menu_items')
           .update({
             name: editingItem.name,
             description: editingItem.description,
             price: editingItem.price,
-            category: editingItem.category,
+            category: categoryName,
+            category_id: editingItem.category_id,
+            image_url: imageUrl,
             is_veg: editingItem.is_veg,
             is_popular: editingItem.is_popular,
             is_available: editingItem.is_available,
@@ -198,7 +247,6 @@ const Admin = () => {
       
       setIsDialogOpen(false);
       setEditingItem(null);
-      fetchMenuItems();
     } catch (error: any) {
       console.error('Error saving item:', error);
       toast.error(error.message || 'Failed to save item');
@@ -215,7 +263,6 @@ const Admin = () => {
         .eq('id', id);
       if (error) throw error;
       toast.success('Menu item deleted!');
-      fetchMenuItems();
     } catch (error: any) {
       console.error('Error deleting item:', error);
       toast.error(error.message || 'Failed to delete item');
@@ -228,13 +275,107 @@ const Admin = () => {
       name: '',
       description: '',
       price: 0,
-      category: 'Starters',
+      category_id: categories[0]?.id || '',
+      category_name: categories[0]?.name || '',
       image_url: null,
       is_veg: true,
       is_popular: false,
       is_available: true,
     });
     setIsDialogOpen(true);
+  };
+
+  const handleSaveCategory = async () => {
+    if (!editingCategory || !cafe?.id) return;
+
+    const isNew = !editingCategory.id;
+    
+    try {
+      if (isNew) {
+        await createCategory.mutateAsync({
+          name: editingCategory.name,
+          icon: editingCategory.icon,
+          description: editingCategory.description,
+          display_order: 0
+        });
+        toast.success('Category added!');
+      } else {
+        await updateCategory.mutateAsync({
+          id: editingCategory.id,
+          name: editingCategory.name,
+          icon: editingCategory.icon,
+          description: editingCategory.description,
+        });
+        toast.success('Category updated!');
+      }
+      
+      setIsCategoryDialogOpen(false);
+      setEditingCategory(null);
+    } catch (error: any) {
+      console.error('Error saving category:', error);
+      toast.error(error.message || 'Failed to save category');
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    // Check if category has menu items
+    const hasItems = menuItems.some(item => item.category_id === id);
+    if (hasItems) {
+      toast.error('Cannot delete category with existing menu items. Please reassign or delete the items first.');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this category?')) return;
+
+    try {
+      await deleteCategory.mutateAsync(id);
+      toast.success('Category deleted!');
+    } catch (error: any) {
+      console.error('Error deleting category:', error);
+      toast.error(error.message || 'Failed to delete category');
+    }
+  };
+
+  const openNewCategoryDialog = () => {
+    setEditingCategory({
+      id: '',
+      name: '',
+      icon: '🍽️',
+      description: '',
+    });
+    setIsCategoryDialogOpen(true);
+  };
+
+  const handleAddTable = async () => {
+    if (!cafe?.id) return;
+
+    try {
+      // Find the next available table number
+      const existingNumbers = tables.map(t => parseInt(t.table_number)).sort((a, b) => a - b);
+      let nextNumber = 1;
+      for (const num of existingNumbers) {
+        if (nextNumber === num) nextNumber++;
+        else break;
+      }
+
+      await createTable.mutateAsync(String(nextNumber));
+      toast.success(`Table ${nextNumber} added!`);
+    } catch (error: any) {
+      console.error('Error adding table:', error);
+      toast.error(error.message || 'Failed to add table');
+    }
+  };
+
+  const handleDeleteTable = async (id: string, tableNumber: string) => {
+    if (!confirm(`Are you sure you want to delete Table ${tableNumber}?`)) return;
+
+    try {
+      await deleteTable.mutateAsync(id);
+      toast.success(`Table ${tableNumber} deleted!`);
+    } catch (error: any) {
+      console.error('Error deleting table:', error);
+      toast.error(error.message || 'Failed to delete table');
+    }
   };
 
   const handleSignOut = async () => {
@@ -255,15 +396,15 @@ const Admin = () => {
 
   return (
     <div className="min-h-screen bg-muted/30 flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-card border-r border-border hidden md:block">
+      {/* Sidebar - Fixed/Sticky */}
+      <aside className="w-64 bg-card border-r border-border hidden md:block fixed left-0 top-0 bottom-0 overflow-y-auto">
         <div className="p-6 border-b border-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
               <Coffee className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-serif font-bold">Bistro@17</h1>
+              <h1 className="font-serif font-bold">{cafe?.name || 'Admin'}</h1>
               <p className="text-xs text-muted-foreground">Admin Panel</p>
             </div>
           </div>
@@ -302,6 +443,28 @@ const Admin = () => {
           >
             <UtensilsCrossed className="w-5 h-5" />
             Menu Items
+          </button>
+          <button
+            onClick={() => setActiveTab('categories')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              activeTab === 'categories' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'hover:bg-muted'
+            }`}
+          >
+            <Tags className="w-5 h-5" />
+            Categories
+          </button>
+          <button
+            onClick={() => setActiveTab('tables')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              activeTab === 'tables' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'hover:bg-muted'
+            }`}
+          >
+            <Hash className="w-5 h-5" />
+            Tables
           </button>
           <button
             onClick={() => setActiveTab('staff')}
@@ -346,8 +509,8 @@ const Admin = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 p-6 overflow-auto">
+      {/* Main Content - Scrollable */}
+      <main className="flex-1 p-6 overflow-y-auto md:ml-64">
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             <h2 className="text-2xl font-serif font-bold">Dashboard</h2>
@@ -412,10 +575,10 @@ const Admin = () => {
                 <h3 className="font-semibold mb-4">Menu Overview</h3>
                 <div className="space-y-2">
                   {categories.map(cat => {
-                    const count = menuItems.filter(i => i.category === cat).length;
+                    const count = menuItems.filter(i => i.category_id === cat.id).length;
                     return (
-                      <div key={cat} className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{cat}</span>
+                      <div key={cat.id} className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{cat.name}</span>
                         <span className="font-medium">{count} items</span>
                       </div>
                     );
@@ -438,51 +601,61 @@ const Admin = () => {
 
             {/* Menu Items by Category */}
             {categories.map(category => {
-              const items = menuItems.filter(i => i.category === category);
+              const items = menuItems.filter(i => i.category_id === category.id);
               if (items.length === 0) return null;
               
               return (
-                <div key={category} className="space-y-4">
-                  <h3 className="font-semibold text-lg">{category}</h3>
+                <div key={category.id} className="space-y-4">
+                  <h3 className="font-semibold text-lg">{category.name}</h3>
                   <div className="grid gap-4">
                     {items.map(item => (
                       <Card key={item.id} className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-3 h-3 rounded-full ${item.is_veg ? 'bg-green-500' : 'bg-red-500'}`} />
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{item.name}</span>
-                                {item.is_popular && (
-                                  <Badge variant="secondary" className="text-xs">Popular</Badge>
-                                )}
-                                {!item.is_available && (
-                                  <Badge variant="destructive" className="text-xs">Unavailable</Badge>
-                                )}
-                              </div>
-                              <p className="text-sm text-muted-foreground">{item.description}</p>
+                        <div className="flex items-center gap-4">
+                          {item.image_url ? (
+                            <img 
+                              src={item.image_url} 
+                              alt={item.name} 
+                              className="w-16 h-16 object-cover rounded-md"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 bg-muted rounded-md flex items-center justify-center">
+                              <UtensilsCrossed className="w-8 h-8 text-muted-foreground" />
                             </div>
+                          )}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{item.name}</span>
+                              {item.isPopular && (
+                                <Badge variant="secondary" className="text-xs">Popular</Badge>
+                              )}
+                              {!item.isAvailable && (
+                                <Badge variant="destructive" className="text-xs">Unavailable</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{item.description}</p>
                           </div>
                           <div className="flex items-center gap-4">
                             <span className="font-bold text-lg">₹{item.price}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setEditingItem(item);
-                                setIsDialogOpen(true);
-                              }}
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-red-500 hover:text-red-600"
-                              onClick={() => handleDeleteItem(item.id)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  setEditingItem(item);
+                                  setIsDialogOpen(true);
+                                }}
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-red-500 hover:text-red-600"
+                                onClick={() => handleDeleteItem(item.id)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </Card>
@@ -491,6 +664,87 @@ const Admin = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {activeTab === 'categories' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-serif font-bold">Categories</h2>
+              <Button onClick={openNewCategoryDialog} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Add Category
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              {categories.map(category => (
+                <Card key={category.id} className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl">{category.icon}</span>
+                      <div>
+                        <h3 className="font-medium">{category.name}</h3>
+                        <p className="text-sm text-muted-foreground">{category.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => {
+                          setEditingCategory(category);
+                          setIsCategoryDialogOpen(true);
+                        }}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="text-red-500 hover:text-red-600"
+                        onClick={() => handleDeleteCategory(category.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'tables' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-serif font-bold">Tables</h2>
+              <Button onClick={handleAddTable} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Add Table
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {tables.map(table => (
+                <Card key={table.id} className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium">Table {table.table_number}</h3>
+                      <p className="text-sm text-muted-foreground">QR Code available</p>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-red-500 hover:text-red-600"
+                      onClick={() => handleDeleteTable(table.id, table.table_number)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
           </div>
         )}
 
@@ -577,6 +831,45 @@ const Admin = () => {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label>Image</Label>
+                <div className="space-y-2">
+                  {editingItem.image_url && (
+                    <div className="relative">
+                      <img 
+                        src={editingItem.image_url} 
+                        alt="Preview" 
+                        className="w-full h-32 object-cover rounded-md"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="absolute top-2 right-2"
+                        onClick={() => setEditingItem({ ...editingItem, image_url: null, image_file: undefined })}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setEditingItem({ ...editingItem, image_file: file });
+                        // Create preview URL
+                        const previewUrl = URL.createObjectURL(file);
+                        setEditingItem({ ...editingItem, image_url: previewUrl, image_file: file });
+                      }
+                    }}
+                    disabled={uploadingImage}
+                  />
+                  {uploadingImage && <p className="text-sm text-muted-foreground">Uploading...</p>}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="price">Price (₹)</Label>
@@ -590,15 +883,15 @@ const Admin = () => {
                 <div className="space-y-2">
                   <Label htmlFor="category">Category</Label>
                   <Select
-                    value={editingItem.category}
-                    onValueChange={(value) => setEditingItem({ ...editingItem, category: value })}
+                    value={editingItem.category_id}
+                    onValueChange={(value) => setEditingItem({ ...editingItem, category_id: value })}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map(cat => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -637,6 +930,62 @@ const Admin = () => {
                   Cancel
                 </Button>
                 <Button className="flex-1 gap-2" onClick={handleSaveItem}>
+                  <Save className="w-4 h-4" />
+                  Save
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit/Add Category Dialog */}
+      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingCategory?.id ? 'Edit Category' : 'Add New Category'}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {editingCategory && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="cat-name">Name</Label>
+                <Input
+                  id="cat-name"
+                  value={editingCategory.name}
+                  onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                  placeholder="Category name"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cat-icon">Icon</Label>
+                <Input
+                  id="cat-icon"
+                  value={editingCategory.icon}
+                  onChange={(e) => setEditingCategory({ ...editingCategory, icon: e.target.value })}
+                  placeholder="🍽️"
+                />
+                <p className="text-sm text-muted-foreground">Use emoji or icon</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cat-description">Description</Label>
+                <Input
+                  id="cat-description"
+                  value={editingCategory.description || ''}
+                  onChange={(e) => setEditingCategory({ ...editingCategory, description: e.target.value })}
+                  placeholder="Category description"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button variant="outline" className="flex-1" onClick={() => setIsCategoryDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button className="flex-1 gap-2" onClick={handleSaveCategory}>
                   <Save className="w-4 h-4" />
                   Save
                 </Button>

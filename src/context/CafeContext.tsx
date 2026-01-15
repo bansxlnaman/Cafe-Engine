@@ -125,9 +125,14 @@ export const CafeProvider = ({ children }: CafeProviderProps) => {
 
         setCafe(cafeData);
 
-        // Apply theme based on cafe default (if no user preference)
+        // Apply theme based on priority:
+        // 1. User preference (localStorage)
+        // 2. Cafe default theme
+        // 3. System preference (handled by next-themes)
         const userPreference = localStorage.getItem('theme');
-        if (!userPreference) {
+        if (userPreference && (userPreference === 'light' || userPreference === 'dark')) {
+          setTheme(userPreference);
+        } else {
           setTheme(theme.default_mode);
         }
 

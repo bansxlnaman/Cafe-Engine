@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCafe } from '@/context/CafeContext';
 
 export interface MenuItem {
   id: string;
@@ -7,35 +8,25 @@ export interface MenuItem {
   price: number;
   description: string | null;
   isVeg: boolean;
-  category: string;
+  category_id: string;
+  category_name: string;
   image?: string;
   isPopular: boolean;
   isAvailable: boolean;
 }
 
-export interface Category {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-}
-
-// Static categories with icons
-export const categories: Category[] = [
-  { id: 'Starters', name: 'Starters', icon: '🍟', description: 'Crispy beginnings' },
-  { id: 'Burgers', name: 'Burgers', icon: '🍔', description: 'Juicy goodness' },
-  { id: 'Pizza & Pasta', name: 'Pizza & Pasta', icon: '🍕', description: 'Italian favorites' },
-  { id: 'Chinese', name: 'Chinese', icon: '🍜', description: 'Wok-fresh flavors' },
-  { id: 'Beverages', name: 'Beverages', icon: '☕', description: 'Sip & chill' },
-  { id: 'Desserts', name: 'Desserts', icon: '🍰', description: 'Sweet endings' },
-];
-
-const fetchMenuItems = async (): Promise<MenuItem[]> => {
+const fetchMenuItems = async (cafeId: string): Promise<MenuItem[]> => {
   const { data, error } = await supabase
     .from('menu_items')
-    .select('*')
+    .select(`
+      *,
+      categories (
+        name
+      )
+    `)
+    .eq('cafe_id', cafeId)
     .eq('is_available', true)
-    .order('category', { ascending: true });
+    .order('categories(name)', { ascending: true });
 
   if (error) {
     throw error;
@@ -48,7 +39,8 @@ const fetchMenuItems = async (): Promise<MenuItem[]> => {
     price: Number(item.price),
     description: item.description,
     isVeg: item.is_veg,
-    category: item.category,
+    category_id: item.category_id,
+    category_name: item.categories?.name || 'Uncategorized',
     image: item.image_url || undefined,
     isPopular: item.is_popular,
     isAvailable: item.is_available,
@@ -56,15 +48,18 @@ const fetchMenuItems = async (): Promise<MenuItem[]> => {
 };
 
 export const useMenuItems = () => {
+  const { cafe } = useCafe();
+
   return useQuery({
-    queryKey: ['menu-items'],
-    queryFn: fetchMenuItems,
+    queryKey: ['menu-items', cafe?.id],
+    queryFn: () => cafe?.id ? fetchMenuItems(cafe.id) : Promise.resolve([]),
+    enabled: !!cafe?.id,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 };
 
 export const getItemsByCategory = (items: MenuItem[], categoryId: string) =>
-  items.filter(item => item.category === categoryId);
+  items.filter(item => item.category_id === categoryId);
 
 export const getPopularItems = (items: MenuItem[]) =>
   items.filter(item => item.isPopular);

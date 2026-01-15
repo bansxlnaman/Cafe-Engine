@@ -6,9 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
+import { useCafe } from '@/context/CafeContext';
 import { toast } from 'sonner';
 
 const Auth = () => {
+  const { cafe } = useCafe();
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -82,11 +84,19 @@ const Auth = () => {
       <Card className="w-full max-w-md p-8">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
-            <Coffee className="w-8 h-8 text-primary-foreground" />
-          </div>
+          {cafe?.logo_url ? (
+            <img 
+              src={cafe.logo_url} 
+              alt={cafe.name}
+              className="w-16 h-16 rounded-full object-cover mx-auto mb-4"
+            />
+          ) : (
+            <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
+              <Coffee className="w-8 h-8 text-primary-foreground" />
+            </div>
+          )}
           <h1 className="font-serif text-2xl font-bold text-foreground">
-            Bistro@17
+            {cafe?.name || 'Admin Login'}
           </h1>
           <p className="text-muted-foreground mt-2">
             {isLogin ? 'Staff Login' : 'Create Account'}

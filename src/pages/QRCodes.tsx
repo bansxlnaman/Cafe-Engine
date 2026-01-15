@@ -4,12 +4,16 @@ import { Download, Printer, Table2 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-
-const tableNumbers = Array.from({ length: 20 }, (_, i) => (i + 1).toString());
+import { useCafe } from '@/context/CafeContext';
+import { useTables } from '@/hooks/useTables';
 
 const QRCodes = () => {
+  const { cafe } = useCafe();
+  const { data: tables = [] } = useTables();
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const baseUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
+  
+  const tableNumbers = tables.map(t => t.table_number);
 
   const toggleTable = (tableNum: string) => {
     setSelectedTables(prev => 
@@ -53,7 +57,8 @@ const QRCodes = () => {
       }
       
       const link = document.createElement('a');
-      link.download = `bistro17-table-${tableNum}-qr.png`;
+      const cafeSlug = cafe?.name?.toLowerCase().replace(/\s+/g, '-') || 'cafe';
+      link.download = `${cafeSlug}-table-${tableNum}-qr.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     };
@@ -61,17 +66,46 @@ const QRCodes = () => {
     img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
   };
 
-  const printSelected = () => {
+  const printSelected = async () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
     const qrCodes = selectedTables.length > 0 ? selectedTables : tableNumbers;
+    const cafeName = cafe?.name || 'Café';
+    
+    // Generate QR code data URLs from existing SVG elements
+    const qrDataUrls: Record<string, string> = {};
+    
+    for (const tableNum of qrCodes) {
+      const svgElement = document.getElementById(`qr-${tableNum}`);
+      if (svgElement) {
+        const svgData = new XMLSerializer().serializeToString(svgElement);
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        
+        await new Promise<void>((resolve) => {
+          img.onload = () => {
+            canvas.width = 300;
+            canvas.height = 300;
+            if (ctx) {
+              ctx.fillStyle = 'white';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, 300, 300);
+            }
+            qrDataUrls[tableNum] = canvas.toDataURL('image/png');
+            resolve();
+          };
+          img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+        });
+      }
+    }
     
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Bistro@17 QR Codes</title>
+          <title>${cafeName} QR Codes</title>
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: system-ui, sans-serif; }
@@ -95,7 +129,7 @@ const QRCodes = () => {
             .logo { font-size: 2rem; font-weight: bold; color: #2d5a27; margin-bottom: 1.5rem; }
             .table-num { font-size: 2.5rem; font-weight: bold; margin-top: 1.5rem; }
             .subtitle { color: #666; margin-top: 0.5rem; font-size: 1.2rem; }
-            svg { display: block; margin: 0 auto; }
+            img { display: block; margin: 0 auto; width: 300px; height: 300px; }
             @media print {
               .page { height: 100vh; }
             }
@@ -105,12 +139,12 @@ const QRCodes = () => {
     `);
 
     qrCodes.forEach(tableNum => {
-      const url = `${baseUrl}/order?table=${tableNum}`;
+      const qrDataUrl = qrDataUrls[tableNum] || '';
       printWindow.document.write(`
         <div class="page">
           <div class="qr-container">
-            <div class="logo">☕ Bistro@17</div>
-            <svg id="print-qr-${tableNum}" width="250" height="250"></svg>
+            <div class="logo">☕ ${cafeName}</div>
+            <img src="${qrDataUrl}" alt="QR Code for Table ${tableNum}" />
             <div class="table-num">Table ${tableNum}</div>
             <div class="subtitle">Scan to Order</div>
           </div>
@@ -121,23 +155,10 @@ const QRCodes = () => {
     printWindow.document.write('</body></html>');
     printWindow.document.close();
 
-    // Generate QR codes in print window
+    // Wait for images to load, then print
     setTimeout(() => {
-      qrCodes.forEach(tableNum => {
-        const url = `${baseUrl}/order?table=${tableNum}`;
-        const container = printWindow.document.getElementById(`print-qr-${tableNum}`);
-        if (container) {
-          // Simple QR placeholder - in real implementation, use a library
-          container.innerHTML = `
-            <rect width="250" height="250" fill="white" stroke="#2d5a27" stroke-width="2"/>
-            <text x="125" y="125" text-anchor="middle" font-size="12" fill="#2d5a27">
-              ${url}
-            </text>
-          `;
-        }
-      });
       printWindow.print();
-    }, 500);
+    }, 1000);
   };
 
   return (
@@ -173,8 +194,14 @@ const QRCodes = () => {
             </div>
 
             {/* QR Code Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-              {tableNumbers.map((tableNum) => {
+            {tableNumbers.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Table2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">No tables configured. Please add tables in the Admin panel.</p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                {tableNumbers.map((tableNum) => {
                 const orderUrl = `${baseUrl}/order?table=${tableNum}`;
                 const isSelected = selectedTables.includes(tableNum);
                 
@@ -217,7 +244,8 @@ const QRCodes = () => {
                   </Card>
                 );
               })}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
