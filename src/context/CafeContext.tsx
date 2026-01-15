@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useTheme } from 'next-themes';
 
@@ -58,16 +58,17 @@ export const CafeProvider = ({ children }: CafeProviderProps) => {
   const [error, setError] = useState<string | null>(null);
   const { setTheme } = useTheme();
 
-  const resolveTenant = async () => {
+  const resolveTenant = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
       // Get current domain (for multi-tenant resolution)
       const currentDomain = window.location.hostname;
-      
+      let cafeData = null;
+
       // Try to find cafe by domain
-      let { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('cafes')
         .select('*')
         .eq('domain', currentDomain)
@@ -83,21 +84,23 @@ export const CafeProvider = ({ children }: CafeProviderProps) => {
           .maybeSingle();
 
         if (fallbackError) throw fallbackError;
-        data = fallbackData;
+        cafeData = fallbackData;
+      } else {
+        cafeData = data;
       }
 
-      if (data) {
+      if (cafeData) {
         // Parse theme JSON safely
         let theme: CafeTheme = defaultTheme;
-        if (data.theme) {
-          if (typeof data.theme === 'string') {
+        if (cafeData.theme) {
+          if (typeof cafeData.theme === 'string') {
             try {
-              theme = JSON.parse(data.theme);
+              theme = JSON.parse(cafeData.theme);
             } catch {
               theme = defaultTheme;
             }
-          } else if (typeof data.theme === 'object' && !Array.isArray(data.theme)) {
-            const themeObj = data.theme as Record<string, unknown>;
+          } else if (typeof cafeData.theme === 'object' && !Array.isArray(cafeData.theme)) {
+            const themeObj = cafeData.theme as Record<string, unknown>;
             theme = {
               default_mode: (themeObj.default_mode as 'light' | 'dark') || defaultTheme.default_mode,
               primary_color: (themeObj.primary_color as string) || defaultTheme.primary_color,
@@ -106,24 +109,24 @@ export const CafeProvider = ({ children }: CafeProviderProps) => {
           }
         }
 
-        const cafeData: Cafe = {
-          id: data.id,
-          name: data.name,
-          domain: data.domain,
-          logo_url: data.logo_url,
-          description: data.description,
-          tagline: data.tagline,
+        const formattedCafeData: Cafe = {
+          id: cafeData.id,
+          name: cafeData.name,
+          domain: cafeData.domain,
+          logo_url: cafeData.logo_url,
+          description: cafeData.description,
+          tagline: cafeData.tagline,
           theme,
-          address: data.address,
-          phone: data.phone,
-          whatsapp_number: data.whatsapp_number,
-          facebook_url: data.facebook_url,
-          instagram_url: data.instagram_url,
-          opening_hours: data.opening_hours,
-          google_maps_url: data.google_maps_url,
+          address: cafeData.address,
+          phone: cafeData.phone,
+          whatsapp_number: cafeData.whatsapp_number,
+          facebook_url: cafeData.facebook_url,
+          instagram_url: cafeData.instagram_url,
+          opening_hours: cafeData.opening_hours,
+          google_maps_url: cafeData.google_maps_url,
         };
 
-        setCafe(cafeData);
+        setCafe(formattedCafeData);
 
         // Apply theme based on priority:
         // 1. User preference (localStorage)
@@ -141,13 +144,13 @@ export const CafeProvider = ({ children }: CafeProviderProps) => {
       } else {
         setError('No café configuration found. Please set up your café.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error resolving tenant:', err);
-      setError(err.message || 'Failed to load café configuration');
+      setError(err instanceof Error ? err.message : 'Failed to load café configuration');
     } finally {
       setLoading(false);
     }
-  };
+  }, [setTheme]);
 
   const applyThemeColors = (theme: CafeTheme) => {
     const root = document.documentElement;
@@ -157,12 +160,13 @@ export const CafeProvider = ({ children }: CafeProviderProps) => {
       const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
       if (!result) return '';
       
-      let r = parseInt(result[1], 16) / 255;
-      let g = parseInt(result[2], 16) / 255;
-      let b = parseInt(result[3], 16) / 255;
+      const r = parseInt(result[1], 16) / 255;
+      const g = parseInt(result[2], 16) / 255;
+      const b = parseInt(result[3], 16) / 255;
       
       const max = Math.max(r, g, b), min = Math.min(r, g, b);
-      let h = 0, s = 0, l = (max + min) / 2;
+      let h = 0, s = 0;
+      const l = (max + min) / 2;
       
       if (max !== min) {
         const d = max - min;
@@ -194,7 +198,7 @@ export const CafeProvider = ({ children }: CafeProviderProps) => {
 
   useEffect(() => {
     resolveTenant();
-  }, []);
+  }, [resolveTenant]);
 
   return (
     <CafeContext.Provider value={{ cafe, loading, error, refetch: resolveTenant }}>
