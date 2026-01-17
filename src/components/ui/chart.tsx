@@ -65,26 +65,47 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
-    const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
-  })
-  .join("\n")}
-}
-`,
-          )
-          .join("\n"),
-      }}
-    />
-  );
+  // Safely generate CSS without dangerouslySetInnerHTML
+  // Escape the id to prevent CSS injection
+  const escapedId = React.useMemo(() => id.replace(/[^a-zA-Z0-9-]/g, ''), [id]);
+  
+  // Build CSS rules safely
+  const cssRules = React.useMemo(() => {
+    return Object.entries(THEMES)
+      .map(([theme, prefix]) => {
+        const colorVars = colorConfig
+          .map(([key, itemConfig]) => {
+            const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
+            // Escape CSS variable name and value
+            const escapedKey = key.replace(/[^a-zA-Z0-9-]/g, '');
+            // Validate color is a valid CSS color (hex, rgb, hsl, or CSS variable)
+            if (color && /^#?[0-9A-Fa-f]{3,8}$|^(rgb|hsl|var)\(/.test(color)) {
+              return `  --color-${escapedKey}: ${color};`;
+            }
+            return null;
+          })
+          .filter(Boolean)
+          .join("\n");
+        
+        if (!colorVars) return null;
+        
+        return `${prefix} [data-chart=${escapedId}] {\n${colorVars}\n}`;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }, [colorConfig, escapedId]);
+
+  // Use a ref to safely inject CSS via textContent (safer than innerHTML)
+  const styleRef = React.useRef<HTMLStyleElement>(null);
+  
+  React.useEffect(() => {
+    if (styleRef.current && cssRules) {
+      // Use textContent instead of innerHTML to prevent XSS
+      styleRef.current.textContent = cssRules;
+    }
+  }, [cssRules]);
+
+  return <style ref={styleRef} />;
 };
 
 const ChartTooltip = RechartsPrimitive.Tooltip;

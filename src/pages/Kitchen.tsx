@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
+import { useCafe } from '@/context/CafeContext';
 import { toast } from 'sonner';
 
 interface OrderItem {
@@ -40,15 +41,22 @@ const statusLabels: Record<string, string> = {
 };
 
 const Kitchen = () => {
+  const { cafe } = useCafe();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('active');
 
   const fetchOrders = async () => {
+    if (!cafe?.id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     let query = supabase
       .from('orders')
       .select('*')
+      .eq('cafe_id', cafe.id)
       .order('created_at', { ascending: false });
 
     if (filter === 'active') {
@@ -99,17 +107,20 @@ const Kitchen = () => {
   };
 
   useEffect(() => {
+    if (!cafe?.id) return;
+
     fetchOrders();
 
-    // Set up realtime subscription
+    // Set up realtime subscription filtered by cafe_id
     const channel = supabase
-      .channel('orders-realtime')
+      .channel(`orders-realtime-${cafe.id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'orders'
+          table: 'orders',
+          filter: `cafe_id=eq.${cafe.id}`
         },
         (payload) => {
           console.log('Order change:', payload);
@@ -131,7 +142,7 @@ const Kitchen = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [filter]);
+  }, [filter, cafe?.id]);
 
   const getNextStatus = (currentStatus: string): string | null => {
     const flow: Record<string, string> = {
@@ -151,7 +162,7 @@ const Kitchen = () => {
             <ChefHat className="w-8 h-8" />
             <div>
               <h1 className="text-2xl font-bold">Kitchen Display</h1>
-              <p className="text-sm opacity-80">Bistro@17</p>
+              <p className="text-sm opacity-80">{cafe?.name || 'Loading...'}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">

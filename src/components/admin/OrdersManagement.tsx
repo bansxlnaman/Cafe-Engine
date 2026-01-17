@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
+import { useCafe } from '@/context/CafeContext';
 import { toast } from 'sonner';
 
 interface OrderItem {
@@ -46,6 +47,7 @@ const statusLabels: Record<string, string> = {
 };
 
 const OrdersManagement = () => {
+  const { cafe } = useCafe();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,11 +55,17 @@ const OrdersManagement = () => {
   const [dateFilter, setDateFilter] = useState<string>('today');
 
   const fetchOrders = async () => {
+    if (!cafe?.id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     
     let query = supabase
       .from('orders')
       .select('*')
+      .eq('cafe_id', cafe.id)
       .order('created_at', { ascending: false });
 
     // Apply date filter
@@ -97,7 +105,7 @@ const OrdersManagement = () => {
 
   useEffect(() => {
     fetchOrders();
-  }, [statusFilter, dateFilter]);
+  }, [statusFilter, dateFilter, cafe?.id]);
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     const { error } = await supabase
